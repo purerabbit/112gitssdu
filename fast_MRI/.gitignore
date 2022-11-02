@@ -1,0 +1,10 @@
+.idea
+*.eggs
+env
+__pycache__
+*egg-info*
+data
+output
+**.h5
+# /home/liuchun/ssdu_git/fast_MRI/fastMRI/fastmri_examples/unet/unet/unet_demo/checkpoints
+# /home/liuchun/ssdu_git/fast_MRI/fastMRI/fastmri_examples/unet/unet/unet_demo/reconstructions
