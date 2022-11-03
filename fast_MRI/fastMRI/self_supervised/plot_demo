@@ -1,0 +1,5 @@
+# img_show=torch.cat((pseudo2real(im_gt),pseudo2real(under_img) ,pseudo2real(output_up)),0)
+# psnr_show=compute_psnr(pseudo2real(im_gt),pseudo2real(output_up))
+# ssim_show=compute_ssim(pseudo2real(im_gt),pseudo2real(output_up))
+# imsshow(img_show.data.cpu().numpy(),['gt','undersampled','ssim: {:.3f} psnr: {:.3f}'.format(ssim_show, psnr_show)],1,cmap='gray',is_colorbar=True,filename2save=f'/home/liuchun/dataset_dual/save_new/10281test/{iter_num}.png')
+# # count=iter_num+count 

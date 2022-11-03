@@ -37,7 +37,7 @@ class ResidualBlock(nn.Module):
 
 class MriSelfSupervised(nn.Module):
 
-    def __init__(self, input_channels=1, output_channels=64):
+    def __init__(self, input_channels=2, output_channels=64):
         super().__init__()
         # layer of input and output convolution layers
         # 15 residual blocks (RB) with skip connections
@@ -49,7 +49,7 @@ class MriSelfSupervised(nn.Module):
         self.residual_blocks = nn.ModuleList()
         for i in range(15):
             self.residual_blocks.append(ResidualBlock())
-
+        self.conv_last = nn.Conv2d(output_channels, 2, kernel_size=(3, 3), padding=1)
     def forward(self, x):
         """
 
@@ -65,5 +65,6 @@ class MriSelfSupervised(nn.Module):
         out = self.conv1(x)
         for rb in self.residual_blocks:
             out = rb(out)
+        out = self.conv_last(out)
         return out
 
