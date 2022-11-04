@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import fastmri
 
 class ResidualBlock(nn.Module):
     """
@@ -35,7 +35,7 @@ class ResidualBlock(nn.Module):
         return out
 
 
-class MriSelfSupervised(nn.Module):
+class ResNet(nn.Module):
 
     def __init__(self, input_channels=2, output_channels=64):
         super().__init__()
@@ -50,7 +50,7 @@ class MriSelfSupervised(nn.Module):
         for i in range(15):
             self.residual_blocks.append(ResidualBlock())
         self.conv_last = nn.Conv2d(output_channels, 2, kernel_size=(3, 3), padding=1)
-    def forward(self, x):
+    def forward(self, x, z0, mask, x0):
         """
 
         Parameters
@@ -62,9 +62,36 @@ class MriSelfSupervised(nn.Module):
         -------
 
         """
-        out = self.conv1(x)
+        z = self.conv1(x)
         for rb in self.residual_blocks:
-            out = rb(out)
-        out = self.conv_last(out)
-        return out
+            z = rb(z)
+        z = self.conv_last(z)
+        return x, z, mask, x0
+
+class DC(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+    def forward(self, x, z0, mask, x0):
+        return (fastmri.ifft2c(fastmri.fft2c(z0.permute(0, 2, 3, 1)) 
+        * (torch.ones_like(mask.float())-mask.float()) + fastmri.fft2c(x0.permute(0, 2, 3, 1)))).permute(0, 3, 1,2), z0, mask, x0
+
+
+class MriSelfSupervised(nn.Module):
+    def __init__(self, input_channels=2, output_channels=64):
+        super().__init__()
+        # layer of input and output convolution layers
+        # 15 residual blocks (RB) with skip connections
+            # Each RB comprised of two convolutional layers
+                # first layer is followed by a rectified linear unit (ReLU)
+                # second layer is followed by a constant multiplication layer, with factor C = 0.1 (55).
+                # All layers had a kernel size of 3×3 and 64 channels
+        self.net = nn.ModuleList()
+        for i in range(10):
+            self.net.append(ResNet())
+            self.net.append(DC())
+    def forward(self, x, z0, mask, x0):
+        for n in self.net:
+            x, z0, mask, x0 = n(x, z0, mask, x0)
+        return x, z0, mask, x0
 

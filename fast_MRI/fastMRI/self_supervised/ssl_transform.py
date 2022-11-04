@@ -127,5 +127,7 @@ class SslTransform:
         # return image, target, mean, std, fname, slice_num, max_value,masked_kspace
         masked_kspace = kspace_cropped * mask
         masked_kspace /= torch.max(fastmri.complex_abs(masked_kspace))
+        # plt.imshow(fastmri.complex_abs(fastmri.ifft2c(masked_kspace)), cmap='bone')
+        # plt.show()
         return masked_kspace, image, target, mean, std, fname, slice_num, max_value
         #max_value 最大值？？

@@ -18,7 +18,10 @@ from torch.utils.data import DataLoader
 from torchsummary  import summary
 from ploting import imsshow
 import random
+from torch.utils.tensorboard import SummaryWriter
 random.seed(42)
+
+writer = SummaryWriter("/home/liuchun/ssdu_git/fast_MRI/fastMRI/self_supervised/runs/test") 
 def handle_args():
     parser = ArgumentParser()
 
@@ -65,7 +68,7 @@ def handle_args():
     parser.add_argument(
         "--mask_type",
         choices=("random", "equispaced"),
-        default="random",
+        default="equispaced",
         type=str,
         help="Type of k-space mask",
     )
@@ -163,8 +166,15 @@ def choose_loss_split(volume, ratio=0.5):
     mask_ratio_prob = mask_ratio_prob.unsqueeze(-1).repeat(1,1,2)
     mask_ratio_theta = mask_ratio_prob <= ratio
     mask_ratio_lambda = mask_ratio_prob > ratio
+    import matplotlib.pyplot as plt
+    # plt.imshow(ifft2c(volume).cpu().detach().numpy()[0, :, :, 0], cmap='bone')
+    # plt.title('before samplinng')
+    # plt.show()
     volume_theta_view = mask_ratio_theta * volume
     volume_lambda_view = mask_ratio_lambda * volume
+    # plt.imshow(ifft2c(volume_theta_view).cpu().detach().numpy()[0, :, :, 0], cmap='bone')
+    # plt.title('bafftasdaee samplinng')
+    # plt.show()
     return volume_theta_view, volume_lambda_view, mask_ratio_lambda
 
 # def choose_loss_split(volume, ratio=0.5):
@@ -189,13 +199,13 @@ def choose_loss_split(volume, ratio=0.5):
 def run_training_for_volume(volume, model: torch.nn.Module, optimizer,device):
     #  masked_kspace, image, target, mean, std, fname, slice_num, max_value
     volume_theta_view, volume_lambda_view, mask_lambda = choose_loss_split(volume[0])# input 320 320
-    volume_theta_view_image = fft2c(volume_theta_view)
+    volume_theta_view_image = ifft2c(volume_theta_view)
     mask_lambda = mask_lambda.to(device)
     volume_theta_view_image, volume_lambda_view=volume_theta_view_image.to(device), volume_lambda_view.to(device) #new to model
     volume_theta_view_image.requires_grad=True
     volume_lambda_view.requires_grad=True
     volume_theta_view_image = volume_theta_view_image.permute(0,3,1,2)
-    prediction = model(volume_theta_view_image)  #160 320 损失了一半的数据
+    prediction, _, _, _ = model(volume_theta_view_image, None, torch.ones_like(mask_lambda.float()) - mask_lambda.float(), volume_theta_view_image) 
     #应该在k空间做损失？？  上面的逻辑不正确   输出数据转换到k空间 加上lambda的k空间数据 在采样 数据划分部分 应该用k空间采样 而不是直接在图像域
     loss = calc_ssl_loss(u=volume_lambda_view, v=fft2c(prediction.permute(0,2,3,1))*mask_lambda)
     optimizer.zero_grad()
@@ -203,21 +213,55 @@ def run_training_for_volume(volume, model: torch.nn.Module, optimizer,device):
     optimizer.step()
     return loss
 
-def run_training(model: torch.nn.Module, checkpoint_dir: Path, dataloader: DataLoader,device, epochs=10 ):
+def run_training(model: torch.nn.Module, checkpoint_dir: Path, dataloader: DataLoader,device, epochs=100 ):
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     for e in range(epochs):
         # print('len(dataloader):',len(dataloader))
+        num =0 
         for volume in dataloader:
             loss = run_training_for_volume(volume, model, optimizer,device)
+            num += 1
+            print(loss)
+        # with torch.no_grad():
+        #     import matplotlib.pyplot as plt
+        #     volume_theta_view, volume_lambda_view, mask_lambda = choose_loss_split(volume[0])# input 320 320
+        #     volume_theta_view_image = ifft2c(volume_theta_view)
+        #     mask_lambda = mask_lambda.to(device)
+        #     volume_theta_view_image, volume_lambda_view=volume_theta_view_image.to(device), volume_lambda_view.to(device) #new to model
+        #     volume_theta_view_image = volume_theta_view_image.permute(0,3,1,2)
+        #     prediction, _, _, _ = model(volume_theta_view_image, None, torch.ones_like(mask_lambda.float()) - mask_lambda.float(), volume_theta_view_image) 
+        #     plt.imshow(prediction[0, 0, :, :].cpu().detach().numpy())
+        #     plt.show()
+        # #实现保留loss最小的损失函数
+        # writer.add_scalar("loss(train)",e, epoch_loss / num) #实现tensorboard保存内通过
         save_checkpoint(model, checkpoint_dir)
         print(f"loss: {loss:>7f}  [{e:>5d}/{epochs:>5d}]")
 
 
-def run_pretrained_inference(checkpoint_source: Path):
+def run_pretrained_inference(model, checkpoint_source: Path, dataloader, device):
     # TODO: source may be directory (newest file) or actual file to load
     # TODO: implement
-    raise RuntimeError("Testing mode not currently supported")
-
+    model = MriSelfSupervised()
+    model.to(device)
+    state_dict = torch.load(checkpoint_source)
+    model.load_state_dict(state_dict)
+    model.eval()
+    num = 0
+    import matplotlib.pyplot as plt
+    for volume in dataloader:
+        num +=1
+        volume_theta_view, volume_lambda_view, mask_lambda = choose_loss_split(volume[0])# input 320 320
+        volume_theta_view_image = ifft2c(volume_theta_view)
+        mask_lambda = mask_lambda.to(device)
+        volume_theta_view_image, volume_lambda_view=volume_theta_view_image.to(device), volume_lambda_view.to(device) #new to model
+        volume_theta_view_image = volume_theta_view_image.permute(0,3,1,2)
+        prediction, _, _, _ = model(volume_theta_view_image, None, torch.ones_like(mask_lambda.float()) - mask_lambda.float(), volume_theta_view_image) 
+        loss = calc_ssl_loss(u=volume_lambda_view, v=fft2c(prediction.permute(0,2,3,1))*mask_lambda)
+        img = prediction[0, 0, :, :].cpu().detach().numpy()
+        print(torch.mean(loss), volume_lambda_view.shape)
+        plt.imshow(img, cmap='bone')
+        plt.show()
+        plt.savefig('/home/liuchun/ssdu_git/fast_MRI/fastMRI/self_supervised/images/outputs' + str(num).zfill(4) + '.png')
 
 def main():
     args = handle_args()
@@ -260,7 +304,12 @@ def main():
     elif args.mode == "test":
         if not checkpoint_path.exists():
             raise RuntimeError("Non-existing checkpoint file/directory path {}".format(checkpoint_path))
-        run_pretrained_inference(checkpoint_source=checkpoint_path)
+        model = MriSelfSupervised()
+        model.to(device)
+        run_pretrained_inference(model=model, 
+        checkpoint_source=checkpoint_path, 
+        dataloader=data_module.val_dataloader(),
+        device=device)
     else:
         raise RuntimeError("Unsupported mode '{}'".format(args.mode))
 
